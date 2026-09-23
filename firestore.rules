@@ -1,0 +1,127 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Helper Functions for Role-Based Access Control
+    // ===============================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function getUserRole() {
+      return isAuthenticated() && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+          ? getUserData().role
+          : 'none';
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && getUserRole() == 'admin';
+    }
+
+    function isLibrarian() {
+      return isAuthenticated() && (getUserRole() == 'librarian' || isAdmin());
+    }
+
+    function isStudent() {
+      return isAuthenticated() && getUserRole() == 'member';
+    }
+
+    // ===============================================================
+    // Collection Rules
+    // ===============================================================
+
+    // 1. Users Collection (users/{uid})
+    // Admins can manage all users.
+    // Users can read and update their own profiles (except changing their own role).
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+      allow update: if isAdmin() || (
+        isOwner(userId) &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'uid'])
+      );
+      allow delete: if isAdmin();
+    }
+
+    // 2. Members Collection (members/{memberId})
+    // Librarians and Admins manage patrons.
+    // Students can read only their own member profile.
+    match /members/{memberId} {
+      allow read: if isLibrarian() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+      allow create: if isLibrarian() || (isAuthenticated() && request.resource.data.userId == request.auth.uid);
+      allow update: if isLibrarian() || (
+        isAuthenticated() &&
+        resource.data.userId == request.auth.uid &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['status', 'currentBorrowed', 'totalBorrowed', 'outstandingFine'])
+      );
+      allow delete: if isAdmin();
+    }
+
+    // 3. Books Collection (books/{bookId})
+    // All authenticated users can browse and read catalog.
+    // Only Librarians and Admins can create, update, or remove books.
+    match /books/{bookId} {
+      allow read: if isAuthenticated();
+      allow write: if isLibrarian();
+    }
+
+    // 4. Authors Collection (authors/{authorId})
+    match /authors/{authorId} {
+      allow read: if isAuthenticated();
+      allow write: if isLibrarian();
+    }
+
+    // 5. Categories Collection (categories/{categoryId})
+    match /categories/{categoryId} {
+      allow read: if isAuthenticated();
+      allow write: if isLibrarian();
+    }
+
+    // 6. Borrowings Collection (borrowings/{borrowingId})
+    // Librarians and Admins issue and return books.
+    // Students can read their own borrowing history.
+    match /borrowings/{borrowingId} {
+      allow read: if isLibrarian() || (isAuthenticated() && resource.data.memberId == getUserData().memberId);
+      allow write: if isLibrarian();
+    }
+
+    // 7. Fines Collection (fines/{fineId})
+    // Librarians and Admins manage fines.
+    // Students can inspect only their own fine balances.
+    match /fines/{fineId} {
+      allow read: if isLibrarian() || (isAuthenticated() && resource.data.memberId == getUserData().memberId);
+      allow write: if isLibrarian();
+    }
+
+    // 8. Activities Collection (activities/{activityId})
+    // Activity stream is readable by authenticated users; created on transactions.
+    match /activities/{activityId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if isAdmin();
+    }
+
+    // 9. Notifications Collection (notifications/{notificationId})
+    // Users can read and mark as read their own notifications.
+    match /notifications/{notificationId} {
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isLibrarian());
+      allow create: if isLibrarian() || (isAuthenticated() && request.resource.data.userId == request.auth.uid);
+      allow update: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid ||
+        isLibrarian()
+      );
+      allow delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+    }
+  }
+}

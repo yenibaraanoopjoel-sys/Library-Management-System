@@ -2,7 +2,7 @@ name: Flutter CI
 
 on:
   push:
-    branches: [main, frontend]
+    branches: [main, frontend, backend]
   pull_request:
     branches: [main]
 
@@ -35,10 +35,6 @@ jobs:
         run: dart format --output=none --set-exit-if-changed .
         continue-on-error: true
 
-      # NOTE: This is the FRONTEND-only branch (UI layer).
-      # Models, providers, services and repositories live in the 'backend' branch.
-      # Analyze and tests are non-blocking here since imports from the backend
-      # layer are intentionally absent on this branch.
       - name: Analyze project source
         run: flutter analyze
         continue-on-error: true
