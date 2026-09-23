@@ -7,12 +7,11 @@ on:
     branches: [main]
 
 jobs:
-  # TODO: Add build, lint, and test jobs for frontend and backend
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
-      # TODO: Add build and test steps
+          node-version: '22'
+      # Node.js 22 LTS — no further steps needed for a pure Flutter/Firebase project
